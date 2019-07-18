@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# Config file created by my mod.
+lastrun.ini
+*.json
+
 # Distribution / packaging
 .Python
 build/

@@ -41,6 +41,9 @@ The original implementation of Faster-RCNN using Tensorflow can be found [here](
         ```json
         {"/path/to/image.jpg": [{"score": 0.9999708, "bbox": [551.3375, 314.50253, 729.2599, 485.25674]}]}
         ```
+    - Sample output cropped images to specifc path.
+        ````bash
+        ython main.py -c /path/to/dir
     - Detecting a whole directory with recursion
         ```bash
         python main.py -i /path/to/dir -o /path/to/output.json

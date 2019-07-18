@@ -3,10 +3,11 @@ import cv2
 from faster_rcnn_wrapper import FasterRCNNSlim
 import tensorflow as tf
 import argparse
-import os
+import os, sys, codecs
 import json
 import time
 from nms_wrapper import NMSType, NMSWrapper
+from configparser import ConfigParser
 
 
 def detect(sess, rcnn_cls, image):
@@ -84,6 +85,7 @@ def main():
     parser = argparse.ArgumentParser(description='Anime face detector demo')
     parser.add_argument('-i', help='The input path of an image or directory', required=True, dest='input', type=str)
     parser.add_argument('-o', help='The output json path of the detection result', dest='output')
+    parser.add_argument('-c', help='The output path of faces images that being detected', dest='cut', type=str)
     parser.add_argument('-nms', help='Change the threshold for non maximum suppression',
                         dest='nms_thresh', default=0.3, type=float)
     parser.add_argument('-conf', help='Change the threshold for class regression', dest='conf_thresh',
@@ -127,11 +129,55 @@ def main():
 
     time_start = time.time()
 
+    recognized_num=1
+
+    last_file=''
+
+    # Config
+    configpath = os.path.join(os.path.dirname(sys.argv[0]), 'lastrun.ini')
+    config = ConfigParser()
+    if not os.path.exists(configpath):
+        config['LastRun'] = {
+            'recognized_num' : recognized_num,
+            'last_file':''
+        }
+        with open(configpath, 'w', encoding='utf-8') as file:
+            config.write(file)
+    
+    # check whether path exists.
+    if not os.path.exists(configpath):
+        config['LastRun'] = {
+            'recognized_num' : recognized_num,
+            'last_file' : file
+        }
+        with open(configpath, 'w', encoding='utf-8') as f:
+            config.write(f)
+    else:
+        config.readfp(codecs.open(configpath, 'r', 'utf8'))
+        recognized_num = config.getint('LastRun', 'recognized_num')
+        last_file = config.get('LastRun', 'last_file')
+
+        if last_file in files:
+            index = files.index(last_file)
+            del files[0:index]
+            file_len = len(files)
+
+    # make sure that cut save path exists.
+    if args.cut is not None:
+        if not os.path.isdir(os.path.dirname(args.cut)):
+            os.makedirs(os.path.dirname(args.cut))
+
     for idx, file in enumerate(files):
         elapsed = time.time() - time_start
         eta = (file_len - idx) * elapsed / idx if idx > 0 else 0
         print('[%d/%d] Elapsed: %s, ETA: %s >> %s' % (idx+1, file_len, fmt_time(elapsed), fmt_time(eta), file))
         img = cv2.imread(file)
+
+        # check whether file is null.
+        if img is None:
+            print('[Warning] Can\'t read %s therefore skipped. NOTICE: THIS FILE MAY BE A GIF IMAGE.' % file)
+            continue
+        
         scores, boxes = detect(sess, net, img)
         boxes = boxes[:, 4:8]
         scores = scores[:, 1]
@@ -143,26 +189,44 @@ def main():
         boxes = boxes[inds, :]
 
         result[file] = []
+        
         for i in range(scores.shape[0]):
             x1, y1, x2, y2 = boxes[i, :].tolist()
             new_result = {'score': float(scores[i]),
                           'bbox': [x1, y1, x2, y2]}
             result[file].append(new_result)
 
-            if args.output is None:
+            if args.output is None and args.cut is None:
                 cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+            elif args.cut is not None:
+                detected = img[int(y1):int(y2), int(x1):int(x2)]
+
+                output = os.path.join(args.cut, str(recognized_num) + '.png')
+                cv2.imwrite(output, detected)
+                
+                recognized_num += 1
+
         if args.output:
-            if ((idx+1) % 1000) == 0:
+            # save temporary result every 10 files.
+            if ((idx+1) % 10) == 0:
                 # saving the temporary result
                 with open(args.output, 'w') as f:
                     json.dump(result, f)
-        else:
+        elif args.cut is None:
             cv2.imshow(file, img)
+
+        # save last round status.
+        config['LastRun'] = {
+            'recognized_num' : recognized_num,
+            'last_file' : file
+        }
+        with open(configpath, 'w', encoding='utf-8') as f:
+            config.write(f)
 
     if args.output:
         with open(args.output, 'w') as f:
             json.dump(result, f)
-    else:
+    elif args.cut is None:
         cv2.waitKey()
 
 
